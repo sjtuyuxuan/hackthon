@@ -9,6 +9,7 @@ from interbotix_xs_modules.arm import InterbotixManipulatorXS
 bot = InterbotixManipulatorXS("px100", "arm", "gripper")
 bot.arm.go_to_home_pose()
 bot.arm.set_ee_cartesian_trajectory(x = -0.15)
+bot.gripper.set_pressure(1.0)
 bot.gripper.open()
 
 # Create a pipeline
@@ -63,6 +64,7 @@ align = rs.align(align_to)
 p = profile.get_stream(rs.stream.color)
 intr = p.as_video_stream_profile().get_intrinsics()
 # Streaming loop
+Grep_flag = False
 try:
     while True:
         # Get frameset of color and depth
@@ -85,17 +87,17 @@ try:
 
         hsv = cv2.cvtColor(color_image, cv2.COLOR_BGR2HSV)
         # define range of blue color in HSV
-        lower_purple = np.array([111,120,60])
-        upper_purple = np.array([130,255,255])
+        lower_purple = np.array([115,110,50])
+        upper_purple = np.array([140,255,255])
         # Threshold the HSV image to get only purple colors
         mask = cv2.inRange(hsv, lower_purple, upper_purple)
         # Bitwise-AND mask and original image
         res = cv2.bitwise_and(color_image, color_image, mask= mask)
         contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(res, contours, -1, (0,0,255), 1)
-        cv2.imshow('res',res)
+        cv2.drawContours(color_image, contours, -1, (0,0,255), 1)
         center_size = 0
         center = np.array([0, 0])
+        point3d = [0, 0, 0]
         for contour in contours:
             if len(contour) < 30:
                 continue
@@ -106,8 +108,8 @@ try:
             center = center / center_size
             cv2.circle(color_image, (int(center[0]), int(center[1])), 10, (255,255,255), -1)
             depth = depth_image[int(center[1])][int(center[0])] / 1000
-            if depth > 0.01:
-                point = rs.rs2_deproject_pixel_to_point(intr, [center[0], center[1]], depth)
+            if 1 > depth > 0.01:
+                point3d = rs.rs2_deproject_pixel_to_point(intr, [center[0], center[1]], depth)
         
 
         # Remove background - Set pixels further than clipping_distance to grey
@@ -129,18 +131,22 @@ try:
         if key & 0xFF == ord('q') or key == 27:
             cv2.destroyAllWindows()
             break
-        elif key & 0xFF == ord('g'):
-            print(point)
-            theta = math.atan2(0.405 - point[2], 0.15 - point[0])
-            bot.arm.set_single_joint_position("waist", theta)
-            x_x = math.sqrt((0.15 - point[0]) * (0.15 - point[0]) + (0.405 - point[2]) * (0.405 - point[2]))
-            bot.arm.set_ee_cartesian_trajectory(x = x_x - 0.1, z = -0.03 - point[1])
-            bot.gripper.close()
-            bot.arm.go_to_home_pose()
-            bot.arm.set_single_joint_position("waist", -np.pi/2.0)
-            bot.gripper.open()
-            bot.arm.go_to_home_pose()
-            bot.arm.set_ee_cartesian_trajectory(x = -0.15)
+        elif key & 0xFF == ord('g') or Grep_flag:
+            print(point3d)
+            if 0.2 < point3d[2] < 1.0:
+                theta = math.atan2(0.405 - point3d[2], 0.15 - point3d[0])
+                bot.arm.set_single_joint_position("waist", theta)
+                x_x = math.sqrt((0.15 - point3d[0]) * (0.15 - point3d[0]) + (0.405 - point3d[2]) * (0.405 - point3d[2]))
+                bot.arm.set_ee_cartesian_trajectory(x = x_x - 0.1, z = -0.04 - point3d[1])
+                bot.gripper.close(3)
+                bot.arm.go_to_home_pose()
+                bot.arm.set_single_joint_position("waist", -np.pi/2.0)
+                bot.gripper.open()
+                bot.arm.go_to_home_pose()
+                bot.arm.set_ee_cartesian_trajectory(x = -0.15)
+                Grep_flag = False
+            else:
+                Grep_flag = True
         elif key & 0xFF == ord('h'):
             bot.arm.go_to_home_pose()
             bot.arm.set_ee_cartesian_trajectory(x = -0.15)
