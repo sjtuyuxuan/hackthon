@@ -1,8 +1,15 @@
 import pyrealsense2 as rs
+import math
 # Import Numpy for easy array manipulation
 import numpy as np
 # Import OpenCV for easy image rendering
 import cv2
+from interbotix_xs_modules.arm import InterbotixManipulatorXS
+
+bot = InterbotixManipulatorXS("px100", "arm", "gripper")
+bot.arm.go_to_home_pose()
+bot.arm.set_ee_cartesian_trajectory(x = -0.15)
+bot.gripper.open()
 
 # Create a pipeline
 pipeline = rs.pipeline()
@@ -101,7 +108,6 @@ try:
             depth = depth_image[int(center[1])][int(center[0])] / 1000
             if depth > 0.01:
                 point = rs.rs2_deproject_pixel_to_point(intr, [center[0], center[1]], depth)
-                print(point)
         
 
         # Remove background - Set pixels further than clipping_distance to grey
@@ -123,6 +129,22 @@ try:
         if key & 0xFF == ord('q') or key == 27:
             cv2.destroyAllWindows()
             break
+        elif key & 0xFF == ord('g'):
+            print(point)
+            theta = math.atan2(0.405 - point[2], 0.15 - point[0])
+            bot.arm.set_single_joint_position("waist", theta)
+            x_x = math.sqrt((0.15 - point[0]) * (0.15 - point[0]) + (0.405 - point[2]) * (0.405 - point[2]))
+            bot.arm.set_ee_cartesian_trajectory(x = x_x - 0.1, z = -0.03 - point[1])
+            bot.gripper.close()
+            bot.arm.go_to_home_pose()
+            bot.arm.set_single_joint_position("waist", -np.pi/2.0)
+            bot.gripper.open()
+            bot.arm.go_to_home_pose()
+            bot.arm.set_ee_cartesian_trajectory(x = -0.15)
+        elif key & 0xFF == ord('h'):
+            bot.arm.go_to_home_pose()
+            bot.arm.set_ee_cartesian_trajectory(x = -0.15)
+            
 finally:
     pipeline.stop()
 
